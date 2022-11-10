@@ -22,13 +22,33 @@ const client = new MongoClient(uri, {
     useUnifiedTopology: true,
     serverApi: ServerApiVersion.v1
 });
+function verifyEmail(req, res, next) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      return res.status(401).send({ message: "unauthorized access" });
+    }
+    const token = authHeader.split(" ")[1];
+    jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, function (err, decoded) {
+      if (err) {
+        return res.status(403).send({ message: "unauthorized access" });
+      }
+      req.decoded = decoded;
+      next();
+    });
+  }
 
 async function run() {
     try {
         const db=client.db('WildLive')
         // users collection
         const UserDataCollection = db.collection('userData');
-        
+        app.post("/jwt", (req, res) => {
+            const user = req.body;
+            const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
+              expiresIn: "20h",
+            });
+            res.send({ token });
+          });
         app.get('/users', async(req, res)=>{
             const query={};
             const cursor=UserDataCollection.find(query)
@@ -94,6 +114,36 @@ async function run() {
             const review=await reviewCursor.sort(sort).toArray()
             res.send(review)
         })
+
+
+        app.get('/update/:id', async(req, res)=>{
+            const id =req.params.id;
+            const serQuery={_id:ObjectId(id)}
+            const review= await reviewDataCollection.findOne(serQuery)
+            res.send(review)
+        })
+        app.put('/update/:id', async(req, res)=>{
+            const id =req.params.id;
+            const filter={_id:ObjectId(id)}
+            const reviews=req.body;
+            const option ={upsert:true}
+            const updateReview={
+                $set:{
+                    date:reviews.date,
+                    currentReview:reviews.currentReview
+                }
+            }
+            const result= await reviewDataCollection.updateOne(filter, updateReview, option)
+            res.send(result)
+        })
+
+        app.delete('/reviews/:id',async(req,res)=>{
+            const id =req.params.id;
+            const query ={_id:ObjectId(id)}
+            const result =await reviewDataCollection.deleteOne(query)
+            res.send(result)
+        });
+
         app.get('/user_reviews/:id', async(req, res)=>{
             const id =req.params.id;
             const serQuery={userEmail:id}
@@ -102,8 +152,12 @@ async function run() {
             const review=await reviewCursor.sort(sort).toArray()
             res.send(review)
         })
-        
-
+        app.get('/reviews', async(req, res)=>{
+            const serQuery={}
+            const reviewCursor=reviewDataCollection.find(serQuery)
+            const review=await reviewCursor.limit(6).toArray()
+            res.send(review)
+        })
         
     } finally {
 
